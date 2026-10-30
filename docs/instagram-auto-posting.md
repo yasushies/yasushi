@@ -7,10 +7,10 @@ Notionの「投稿リスト」に入れた投稿を、Claudeの定期実行（�
 | 役割 | 内容 |
 |---|---|
 | 投稿リスト | Notion「Instagram自動投稿（@seitai_cocowa）」ページ内のデータベース「投稿リスト」 |
-| 実行 | Claudeルーティン「Instagram自動投稿（@seitai_cocowa）」 毎日 7:03 / 12:03 / 18:03（日本時間） |
+| 実行 | Claudeのスケジュールタスク「Instagram自動投稿」 毎日 7:03 / 12:03 / 18:03（日本時間） |
 | 投稿 | Windsor.ai の Instagram 連携（account 17841401645289862） |
 
-ルーティンには Notion と Windsor.ai のコネクタを付けておく必要があります（claude.ai のルーティン設定画面から追加）。
+タスクは claude.ai/code/routines の画面から作成し、Notion と Windsor.ai のコネクタを含めています。
 
 ## 投稿リストの項目
 
