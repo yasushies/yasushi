@@ -15,6 +15,12 @@ import urllib.parse
 import urllib.request
 
 API = "https://pixabay.com/api/"
+# Pixabay は Python 既定の User-Agent を 403 で弾くので、通常のブラウザ名を名乗る
+HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; cocowa-instagram/1.0)"}
+
+
+def get(url, timeout):
+    return urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=timeout)
 
 
 def search(key, query, orientation):
@@ -28,7 +34,7 @@ def search(key, query, orientation):
         "per_page": 30,
         "order": "popular",
     }
-    with urllib.request.urlopen(f"{API}?{urllib.parse.urlencode(params)}", timeout=30) as r:
+    with get(f"{API}?{urllib.parse.urlencode(params)}", 30) as r:
         return json.load(r).get("hits", [])
 
 
@@ -51,7 +57,7 @@ def main():
 
     # 人気上位から少しばらつかせて選ぶ
     hit = random.choice(hits[:10])
-    with urllib.request.urlopen(hit["largeImageURL"], timeout=60) as r, open(a.out, "wb") as f:
+    with get(hit["largeImageURL"], 60) as r, open(a.out, "wb") as f:
         f.write(r.read())
     print(f'{hit["id"]}\t{hit["pageURL"]}\t{hit.get("user", "")}')
 
