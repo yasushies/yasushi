@@ -12,7 +12,10 @@
 
 テキストファイルの改行はそのまま改行になる。
 カルーセルのスライド文字は「---」だけの行で区切る。各スライドの1行目が見出し、残りが本文。
-写真は先頭のスライドから順に1枚ずつ使い、足りないスライドは文字だけになる。
+1枚目は表紙：深緑の地に黄色い帯の太い文字（リールの表紙と同じ見せ方）。
+  1枚目の1行目は小さな前置き（「妊活中の方へ」など）、2行目以降が大きな見出し。
+  写真を渡すと表紙の上半分に写真を敷き、その下に見出しを置く。
+2枚目以降は見出し（黄色いマーカー付き）と本文。写真は使わない。
 """
 import argparse
 import os
@@ -30,6 +33,9 @@ BG = (244, 239, 231)        # 生成り
 INK = (61, 90, 71)          # 深い緑（院の掛け軸の色に合わせる）
 BODY = (70, 70, 64)
 SUB = (120, 130, 120)
+YELLOW = (255, 226, 64)     # 表紙の帯・見出しのマーカー
+MARKER = (255, 236, 140)
+DARK = (34, 34, 30)
 FONT_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 FONT_REG = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 FONT_INDEX_JP = 0           # .ttc 内の日本語（JP）フェイス
@@ -50,6 +56,8 @@ def font(path, size):
 
 # 行頭に来てはいけない文字（句読点や閉じかっこ）
 NO_LINE_START = "、。，．,.!?！？)）」』】〕〉》ー～ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ"
+# 行末に来てはいけない文字（開きかっこ）
+NO_LINE_END = "(（「『【〔〈《"
 
 
 def wrap(draw, text, fnt, max_w):
@@ -60,8 +68,11 @@ def wrap(draw, text, fnt, max_w):
         for ch in para:
             if (draw.textlength(line + ch, font=fnt) > max_w and line
                     and ch not in NO_LINE_START):
+                carry = ""
+                while line and line[-1] in NO_LINE_END:
+                    carry, line = line[-1] + carry, line[:-1]
                 lines.append(line)
-                line = ch
+                line = carry + ch
             else:
                 line += ch
         lines.append(line)
@@ -85,6 +96,17 @@ def fit_text(draw, text, path, max_w, max_h, sizes):
         fnt = font(path, size)
         lines = wrap(draw, text, fnt, max_w)
         line_h = int(size * 1.45)
+        if len(lines) * line_h <= max_h:
+            return fnt, lines, line_h
+    return fnt, lines, line_h
+
+
+def fit_wrapped(draw, text, path, max_w, max_h, sizes):
+    """折り返しを前提に、枠に収まる一番大きい文字サイズを選ぶ（説明スライド用）。"""
+    for size in sizes:
+        fnt = font(path, size)
+        lines = wrap(draw, text, fnt, max_w)
+        line_h = int(size * 1.5)
         if len(lines) * line_h <= max_h:
             return fnt, lines, line_h
     return fnt, lines, line_h
@@ -158,8 +180,55 @@ def photo_card(fmt, photo_path, text, dst):
     canvas.save(dst, "JPEG", quality=90)
 
 
+def cover_slide(slide, photo_path, total, dst):
+    """カルーセルの表紙：深緑の地に、黄色い帯の太い見出し。"""
+    w, h = FEED["w"], FEED["h"]
+    canvas = Image.new("RGB", (w, h), INK)
+    draw = ImageDraw.Draw(canvas)
+    lines = [l.strip() for l in slide.split("\n") if l.strip()]
+    if len(lines) >= 2:
+        lead, heading = lines[0], "\n".join(lines[1:])
+    else:
+        lead, heading = "", lines[0]
+
+    top = 110
+    if photo_path:
+        # 写真は表紙の上半分に敷く（横幅いっぱい、はみ出した分だけ切る）
+        photo = ImageOps.exif_transpose(Image.open(photo_path)).convert("RGB")
+        photo = ImageOps.fit(photo, (w, int(h * 0.48)), Image.LANCZOS)
+        canvas.paste(photo, (0, 0))
+        top = photo.height + 50
+
+    lf = font(FONT_BOLD, 52)
+    footer_y = h - 70 - FOOTER_H
+    hf, hlines, hline_h = fit_text(draw, heading, FONT_BOLD, w - 2 * MARGIN_X - 40,
+                                   footer_y - top - 160, range(140, 55, -4))
+    lead_h = 52 + 48 if lead else 0
+    block = lead_h + len(hlines) * hline_h
+    y = top + (footer_y - top - block) // 2
+    if lead:
+        draw.text(((w - draw.textlength(lead, font=lf)) / 2, y), lead, font=lf, fill=YELLOW)
+        y += lead_h
+    pad = int(hline_h * 0.08)
+    for line in hlines:
+        lw = draw.textlength(line, font=hf)
+        x = (w - lw) / 2
+        draw.rectangle((x - 22, y + pad, x + lw + 22, y + hline_h - pad), fill=YELLOW)
+        draw.text((x, y + (hline_h - hf.size) / 2 - hf.size * 0.12), line, font=hf, fill=DARK)
+        y += hline_h
+
+    hint = f"保存して見返せます　→ {total}枚"
+    nf = font(FONT_REG, 32)
+    draw.text(((w - draw.textlength(hint, font=nf)) / 2, footer_y - 10), hint, font=nf,
+              fill=(214, 226, 216))
+    ff = font(FONT_REG, FOOTER_SIZE)
+    draw.text(((w - draw.textlength(FOOTER, font=ff)) / 2, h - 70 - FOOTER_H + 60), FOOTER,
+              font=ff, fill=(214, 226, 216))
+    canvas.save(dst, "JPEG", quality=90)
+
+
 def text_slide(heading, body, page, total, dst):
-    """カルーセルの説明スライド：見出しと本文、右上にページ番号。"""
+    """カルーセルの説明スライド：マーカー付きの見出しと本文、右上にページ番号。"""
     w, h = FEED["w"], FEED["h"]
     canvas = Image.new("RGB", (w, h), BG)
     draw = ImageDraw.Draw(canvas)
@@ -169,14 +238,19 @@ def text_slide(heading, body, page, total, dst):
     draw.text((w - MARGIN_X - draw.textlength(label, font=num), 70), label, font=num, fill=SUB)
 
     max_w = w - 2 * MARGIN_X
-    hf, hlines, hline_h = fit_text(draw, heading, FONT_BOLD, max_w, 300, range(72, 39, -4))
-    bf, blines, bline_h = (fit_text(draw, body, FONT_REG, max_w, 640, range(46, 29, -2))
+    hf, hlines, hline_h = fit_text(draw, heading, FONT_BOLD, max_w, 300, range(72, 47, -4))
+    bf, blines, bline_h = (fit_wrapped(draw, body, FONT_REG, max_w, 600, range(52, 31, -2))
                            if body else (None, [], 0))
     block = len(hlines) * hline_h + (GAP + len(blines) * bline_h if body else 0)
     y = 160 + (h - 160 - 70 - FOOTER_H - block) // 2
-    y = draw_lines(draw, hlines, hf, hline_h, y, w, INK, align="left")
+    for line in hlines:
+        lw = draw.textlength(line, font=hf)
+        # 文字の下半分に黄色いマーカーを引く
+        draw.rectangle((MARGIN_X - 6, y + hline_h * 0.45, MARGIN_X + lw + 6, y + hline_h * 0.86),
+                       fill=MARKER)
+        draw.text((MARGIN_X, y), line, font=hf, fill=INK)
+        y += hline_h
     if body:
-        draw.line(((MARGIN_X, y + GAP // 2 - 8), (MARGIN_X + 80, y + GAP // 2 - 8)), fill=INK, width=4)
         y += GAP
         draw_lines(draw, blines, bf, bline_h, y, w, BODY, align="left")
     draw_footer(draw, h - 70 - FOOTER_H, w)
@@ -190,15 +264,11 @@ def carousel(slides_text, photos, outdir):
         sys.exit(f"スライドは2〜10枚にしてください（今は{len(slides)}枚）")
     os.makedirs(outdir, exist_ok=True)
     for i, slide in enumerate(slides):
-        heading, _, body = slide.partition("\n")
         dst = os.path.join(outdir, f"slide_{i + 1:02d}.jpg")
-        photo = photos[i] if i < len(photos) else None
-        if photo:
-            # 写真のあるスライドは文字を写真の上にまとめて置く
-            photo_card(FEED, photo, slide, dst)
-        elif i == 0:
-            photo_card(FEED, None, slide, dst)
+        if i == 0:
+            cover_slide(slide, photos[0] if photos else None, len(slides), dst)
         else:
+            heading, _, body = slide.partition("\n")
             text_slide(heading, body.strip(), i + 1, len(slides), dst)
         print(dst)
 
